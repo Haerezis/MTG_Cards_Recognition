@@ -5,7 +5,7 @@ Simple "MTG Card Detector" program.
 '''
 
 import numpy as np
-from numpy.linalg import norm
+from numpy.linalg import norm, det
 import cv2
 
 EPSILON_ANGLE = 0.05 # ~3 degree
@@ -14,8 +14,61 @@ EPSILON_DISTANCE = 0.05
 def vectorsAngle(v1,v2) :
     return np.abs(np.arccos(np.vdot(v1, v2) / (norm(v1) * norm(v2))))
 
+
+# line a given by endpoints a1, a2
+# line b given by endpoints b1, b2
+# return np.array containing the intersection coordinates
+# The formula come from wikipedia
+def line_intersection(a1,a2, b1,b2) :
+    det_a_xy = det(np.array([a1,a2]))
+    det_b_xy = det(np.array([b1,b2]))
+    det_a_x = det(np.array([[a1[0], 1], [a2[0], 1]]))
+    det_b_x = det(np.array([[b1[0], 1], [b2[0], 1]]))
+    det_a_y = det(np.array([[a1[1], 1], [a2[1], 1]]))
+    det_b_y = det(np.array([[b1[1], 1], [b2[1], 1]]))
+    x = det(np.array([[det_a_xy, det_a_x], [det_b_xy, det_b_x]]))
+    y = det(np.array([[det_a_xy, det_a_y], [det_b_xy, det_b_y]]))
+    denum = det(np.array([[det_a_x, det_a_y], [det_b_x, det_b_y]]))
+    return np.array([x/denum, y/denum])
+
+def detect_lines(points) :
+    nb_points = len(points)
+    vectors = []
+    for i in range(0, nb_points) :
+        pt1 = points[i]
+        pt2 = points[(i+1) % nb_points]
+        vectors.append([pt1, pt2, pt2 - pt1, i])
+    vectors.sort(key=lambda elt : norm(elt[2]), reverse=True)
+
+    vectors = vectors[:4]
+    lines = []
+    for vector1 in vectors :
+        count = 0
+        for vector2 in vectors :
+            if vector1 is not vector2 :
+                angle = vectorsAngle(vector1[2], vector2[2])
+                if (angle > (np.pi * 0.4)) and (angle < (np.pi*0.9)) : count = count + 1
+        if count == 2 : 
+            lines.append(vector1)
+        elif count > 2 : 
+            raise Exception("Count should not be greater than 2")
+    lines.sort(key=lambda elt : elt[3])
+    lines = [elt[:2] for elt in lines]
+    return lines
+
+
+def approxPoly_lineIntersection(cnt_approx) :
+    lines = detect_lines(cnt_approx)
+    i = 0
+    for elt in lines :
+        print elt
+        cv2.circle(img, (elt[0][0][0], elt[0][0][1]), 8, (0, 0, 150 + i*20), -1)
+        cv2.circle(img, (elt[1][0][0], elt[1][0][1]), 8, (0, 0, 150 + i*20), -1)
+        i = i + 1
+    return cnt_approx
+
 def approxPoly_removeSmallAngle(angles_distances) :
-    while True :
+    while len(angles_distances) > 8 :
         min_elt = min(angles_distances, key=lambda elt : elt[3])
         if min_elt[3] > EPSILON_ANGLE : break
         angles_distances = [elt for elt in angles_distances if elt is not min_elt]
@@ -47,7 +100,7 @@ def approxPoly_removeSmallAngle(angles_distances) :
 
 
 def approxPoly_removeSmallDistance(angles_distances, contours_length) :
-    while True :
+    while len(angles_distances) > 8 :
         min_elt = min(angles_distances, key=lambda elt : elt[4])
         if min_elt[4] / contours_length > EPSILON_DISTANCE : break
         angles_distances = [elt for elt in angles_distances if elt is not min_elt]
@@ -77,6 +130,48 @@ def approxPoly_removeSmallDistance(angles_distances, contours_length) :
     return angles_distances
 
 
+def approxPoly_fuseBigDistance(angles_distances, contours_length) :
+    #return angles_distances
+    coeff = 1
+    while len(angles_distances) > 8 :
+        #print "========"
+        #for elt in angles_distances :
+            #print elt
+        max_elt = None
+        for elt in sorted(angles_distances, key=lambda elt : elt[4]) :
+            if elt[3] < EPSILON_ANGLE * coeff :
+                max_elt = elt
+                break
+        if max_elt is None :
+            coeff = coeff + 0.1
+            continue
+
+        angles_distances = [elt for elt in angles_distances if elt is not max_elt]
+        pts= max_elt[:3]
+        
+        elt_before = filter(lambda elt : np.array_equal(elt[1], pts[0]), angles_distances)[0]
+        elt_after = filter(lambda elt : np.array_equal(elt[1], pts[2]), angles_distances)[0]
+        elt_before[2] = pts[2]
+        elt_after[0] = pts[0]
+
+        pt1 = elt_before[0]
+        pt2 = elt_before[1]
+        pt3 = elt_before[2]
+        angle = vectorsAngle( pt2 - pt1, pt3 - pt2)
+        length = norm(pt2 - pt1) + norm(pt3 - pt2)
+        elt_before[3] = angle
+        elt_before[4] = length
+
+        pt1 = elt_after[0]
+        pt2 = elt_after[1]
+        pt3 = elt_after[2]
+        angle = vectorsAngle( pt2 - pt1, pt3 - pt2)
+        length = norm(pt2 - pt1) + norm(pt3 - pt2)
+        elt_after[3] = angle
+        elt_after[4] = length
+
+    return angles_distances
+
 
 def approxPoly(contours) :
     cnt_approx = np.zeros((4, 2), dtype = "float32")
@@ -97,13 +192,14 @@ def approxPoly(contours) :
 
     angles_distances = approxPoly_removeSmallAngle(angles_distances)
     angles_distances = approxPoly_removeSmallDistance(angles_distances, contours_len)
-
+    angles_distances = approxPoly_fuseBigDistance(angles_distances, contours_len)
 
     cnt_approx = [elt[1] for elt in angles_distances]
+    angles_distances = approxPoly_lineIntersection(cnt_approx)
     i = 0
-    for cnt in cnt_approx :
-        cv2.circle(img, (cnt[0][0], cnt[0][1]), 8, (0, 0, 150 + i*10), -1)
-        i = i + 1
+    #for cnt in cnt_approx :
+        #cv2.circle(img, (cnt[0][0], cnt[0][1]), 8, (0, 0, 150 + i*10), -1)
+        #i = i + 1
 
     cnt_approx = cv2.approxPolyDP(contours, 0.01*contours_len, True)
     return cnt_approx
