@@ -29,7 +29,7 @@ def line_intersection(a1,a2, b1,b2) :
     x = det(np.array([[det_a_xy, det_a_x], [det_b_xy, det_b_x]]))
     y = det(np.array([[det_a_xy, det_a_y], [det_b_xy, det_b_y]]))
     denum = det(np.array([[det_a_x, det_a_y], [det_b_x, det_b_y]]))
-    return np.array([x/denum, y/denum])
+    return np.array([x/denum, y/denum]).astype(int)
 
 def detect_lines(points) :
     nb_points = len(points)
@@ -59,13 +59,18 @@ def detect_lines(points) :
 
 def approxPoly_lineIntersection(cnt_approx) :
     lines = detect_lines(cnt_approx)
-    i = 0
-    for elt in lines :
-        print elt
-        cv2.circle(img, (elt[0][0][0], elt[0][0][1]), 8, (0, 0, 150 + i*20), -1)
-        cv2.circle(img, (elt[1][0][0], elt[1][0][1]), 8, (0, 0, 150 + i*20), -1)
-        i = i + 1
-    return cnt_approx
+    nb_lines = len(lines)
+
+    points = []
+    for i in range(0, nb_lines) :
+        line1 = lines[i]
+        line2 = lines[(i+1) % nb_lines]
+        points.append(line_intersection(line1[0][0], line1[1][0], line2[0][0], line2[1][0]))
+
+
+    for elt in points :
+        cv2.circle(img, (elt[0], elt[1]), 8, (0, 0, 255), -1)
+    return np.asarray(points)
 
 def approxPoly_removeSmallAngle(angles_distances) :
     while len(angles_distances) > 8 :
@@ -195,13 +200,12 @@ def approxPoly(contours) :
     angles_distances = approxPoly_fuseBigDistance(angles_distances, contours_len)
 
     cnt_approx = [elt[1] for elt in angles_distances]
-    angles_distances = approxPoly_lineIntersection(cnt_approx)
+    cnt_approx = approxPoly_lineIntersection(cnt_approx)
     i = 0
     #for cnt in cnt_approx :
         #cv2.circle(img, (cnt[0][0], cnt[0][1]), 8, (0, 0, 150 + i*10), -1)
         #i = i + 1
-
-    cnt_approx = cv2.approxPolyDP(contours, 0.01*contours_len, True)
+    #cnt_approx = cv2.approxPolyDP(contours, 0.01*contours_len, True)
     return cnt_approx
 
 def order_points(pts):
@@ -272,12 +276,40 @@ def angle_cos(p0, p1, p2):
     return abs( np.dot(d1, d2) / np.sqrt( np.dot(d1, d1)*np.dot(d2, d2) ) )
 
 
-blur_threshold = 5
-threshold = 130
+blur_threshold = 1
+threshold = 110
 kernel = np.ones((3,3),np.uint8)
 def find_cards(img):
     img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+
+
+    grey_base = img.copy()
+    grey_image = img.copy()
+    #diff = cv2.absdiff(grey_image, grey_base)
+    diff = img.copy()
+
+    edges = cv2.Canny(diff, 100, 100)
+
+    cv2.imshow("edges", edges)
+
+    edges, contours, hierarchy = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    #edge_pts = []
+    #for c in contours :
+            #if len(c) > 10:
+                    #edge_pts += list(c)
+            #if len(c) == 0: #'cus opencv2 is buggy and dumb
+                    #break
+
+    #if len(edge_pts) == 0:
+            #return None
+    #if len(contours) != 0:
+        #hull = cv2.convexHull(contours)
+
+
+
+
     img = cv2.GaussianBlur(img, (blur_threshold, blur_threshold), 0)
+    cv2.imshow("qof",img)
     cards = []
     #for gray in cv2.split(img):
     
@@ -290,19 +322,26 @@ def find_cards(img):
     cv2.imshow("Cards2", bin)
 
     bin, contours, hierarchy = cv2.findContours(bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    i = 0
     #XXX :Maybe flood dark contour of card to get contour ?
     for cnt in contours:
-        cnt_approx = approxPoly(cnt)
-        cnt_approx = cnt_approx.reshape(-1, 2)
-        warp = four_point_transform(img, cnt_approx)
-        cv2.imshow("Test", warp)
-        cards.append(cnt_approx)
-        #cards.append(cnt)
+        try :
+            cnt_approx = approxPoly(cnt)
+            cnt_approx = cnt_approx.reshape(-1, 2)
+            warp = four_point_transform(img, cnt_approx)
+            #cv2.imshow("Test" + str(i), warp)
+            cards.append(cnt_approx)
+            i = i+1
+            #break
+            #cards.append(cnt)
+        except :
+            continue
     return cards
 
 if __name__ == '__main__':
     from glob import glob
-    for fn in glob('/home/haerezis/git/MTG_Cards_Recognition/test_datafiles/single_01.jpg'):
+    for fn in glob('/home/haerezis/git/MTG_Cards_Recognition/test_datafiles/multi_02.jpg'):
         img = cv2.imread(fn)
         cards = find_cards(img)
         cv2.drawContours( img, cards, -1, (0, 0 , 255), 1 )
