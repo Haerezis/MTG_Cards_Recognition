@@ -16,9 +16,6 @@ def approxPoly_lineIntersection(cnt_approx) :
         line2 = lines[(i+1) % nb_lines]
         points.append(line_intersection(line1[0][0], line1[1][0], line2[0][0], line2[1][0]))
 
-
-    #for elt in points :
-        #cv2.circle(img, (elt[0], elt[1]), 8, (0, 0, 255), -1)
     return np.asarray(points)
 
 def approxPoly_removeSmallAngle(angles_distances) :
@@ -127,7 +124,7 @@ def approxPoly_fuseBigDistance(angles_distances, contours_length) :
     return angles_distances
 
 
-def approxPoly(img,contours) :
+def approxPoly(contours) :
     cnt_approx = np.zeros((4, 2), dtype = "float32")
     contours_len = cv2.arcLength(contours, True)
     
@@ -147,15 +144,9 @@ def approxPoly(img,contours) :
     angles_distances = approxPoly_removeSmallAngle(angles_distances)
     angles_distances = approxPoly_removeSmallDistance(angles_distances, contours_len)
     cnt_approx = [elt[1] for elt in angles_distances]
-    cv2.drawContours(img, cnt_approx, -1, (0,100, 0), 4)
     angles_distances = approxPoly_fuseBigDistance(angles_distances, contours_len)
 
     cnt_approx = [elt[1] for elt in angles_distances]
-    cv2.drawContours(img, cnt_approx, -1, (0,255, 0), 3)
-    #for cnt in cnt_approx :
-        #cv2.circle(img, (cnt[0][0], cnt[0][1]), 8, (0, 0, 255), -1)
     cnt_approx = approxPoly_lineIntersection(cnt_approx)
-    for cnt in cnt_approx :
-        cv2.circle(img, (cnt[0], cnt[1]), 1, (255, 0, 0), -1)
-    #cnt_approx = cv2.approxPolyDP(contours, 0.01*contours_len, True)
+
     return cnt_approx

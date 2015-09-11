@@ -6,18 +6,21 @@ import numpy as np
 import cv2
 
 class CardShapeDetector(Processor):
-    blur_kernel_size = 25
+    blur_kernel_size = 5
     dilation_rate = 0.04
     minimum_area_rate = 0.05
 
     def process(self) :
         img_gray = cv2.cvtColor(self.input_img, cv2.COLOR_RGB2GRAY)
-        blur = cv2.GaussianBlur(img_gray, (CardShapeDetector.blur_kernel_size, CardShapeDetector.blur_kernel_size), 0)
-        cv2.imshow("Blur",blur)
+        img_gray = cv2.equalizeHist(img_gray)
+        img_normalized = img_gray.copy()
+        img_normalized = cv2.normalize(img_gray, img_normalized, 0, 255, cv2.NORM_MINMAX)
+        blur = cv2.GaussianBlur(img_normalized, (CardShapeDetector.blur_kernel_size, CardShapeDetector.blur_kernel_size), 0)
+        #cv2.imshow("Blur",blur)
         
         #bin = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 15, 4)
         bin = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 21, 5)
-        cv2.imshow("adaptiveThreshold mean", bin)
+        #cv2.imshow("adaptiveThreshold mean", bin)
         #_, bin = cv2.threshold(blur,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
         #cv2.imshow("Otsu", bin)
         #_, bin = cv2.threshold(blur, threshold, 255, cv2.THRESH_BINARY)
@@ -25,7 +28,7 @@ class CardShapeDetector(Processor):
 
         bin = (255 - bin)
         #bin = cv2.dilate(bin, np.ones((6,6),np.uint8))
-        cv2.imshow("Dilate", bin)
+        #cv2.imshow("Dilate", bin)
             
 
         bin, contours, hierarchy = cv2.findContours(bin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -49,7 +52,8 @@ class CardShapeDetector(Processor):
             if y2+h2 > img_h : h2 = img_h - y2 - 1
 
             cnt_approx = np.array([(x2,y2),(x2+w2,y2),(x2+w2,y2+h2),(x2,y2+h2)])
-            img_warp = four_point_transform(self.input_img, cnt_approx)
+            #img_warp = four_point_transform(self.input_img, cnt_approx)
+            img_warp = self.input_img[y2:y2+h2, x2:x2+w2]
             #cv2.imshow("Test" + str(i), img_warp)
             #cv2.imwrite("../test_datafiles/test/Test"+str(i)+".bmp", img_warp)
             possible_cards.append(img_warp.copy())
